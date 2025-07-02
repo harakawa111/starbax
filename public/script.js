@@ -1,26 +1,23 @@
-// --- データの準備（モックデータ） ---
+// --- データの準備（オブジェクトの配列にアップグレード） ---
 const drinks = [
-  "ドリップ コーヒー",
-  "スターバックス ラテ",
-  "キャラメル マキアート",
-  "抹茶 ティー ラテ",
+  { name: "ドリップ コーヒー (Hot)", price: 380, calories: 10 },
+  { name: "スターバックス ラテ (Hot)", price: 445, calories: 193 },
+  { name: "キャラメル マキアート", price: 500, calories: 245 },
+  { name: "抹茶 ティー ラテ", price: 495, calories: 226 },
 ];
 
 const customizations = [
-  "無脂肪乳に変更",
-  "低脂肪タイプに変更",
-  "豆乳に変更",
-  "アーモンドミルクに変更",
-  "オーツミルクに変更",
-  "ホイップ追加",
-  "チョコチップ追加",
-  "キャラメルソース追加",
-  "チョコレートソース追加",
-  "はちみつ追加",
-  "シロップ抜き",
-  "エスプレッソショット追加",
-  "コーヒー増量",
-  "氷少なめ",
+  { name: "無脂肪乳に変更", price: 0, calories: -80 },
+  { name: "低脂肪タイプに変更", price: 0, calories: -40 },
+  { name: "豆乳に変更", price: 55, calories: -15 },
+  { name: "アーモンドミルクに変更", price: 55, calories: -20 },
+  { name: "オーツミルクに変更", price: 55, calories: -5 },
+  { name: "ホイップ追加", price: 55, calories: 83 },
+  { name: "チョコチップ追加", price: 55, calories: 27 },
+  { name: "キャラメルソース追加", price: 0, calories: 17 },
+  { name: "チョコレートソース追加", price: 0, calories: 16 },
+  { name: "はちみつ追加", price: 0, calories: 21 },
+  { name: "エスプレッソショット追加", price: 55, calories: 5 },
 ];
 
 // --- HTML要素の取得 ---
@@ -33,8 +30,8 @@ const resultText = document.getElementById("result-text");
 // ドリンク選択のプルダウンに選択肢を追加する
 drinks.forEach((drink) => {
   const option = document.createElement("option");
-  option.value = drink;
-  option.textContent = drink;
+  option.value = drink.name; // valueもnameに設定
+  option.textContent = `${drink.name} (¥${drink.price})`; // 値段も表示
   drinkSelect.appendChild(option);
 });
 
@@ -43,39 +40,56 @@ spinButton.addEventListener("click", () => {
   // スピニング開始
   slots.forEach((slot) => {
     slot.classList.add("spinning");
-    // アニメーション中はテキストを更新し続ける
     const intervalId = setInterval(() => {
       const randomIndex = Math.floor(Math.random() * customizations.length);
-      slot.textContent = customizations[randomIndex];
+      slot.textContent = customizations[randomIndex].name; // .nameプロパティを表示
     }, 100);
-    // スロットごとに参照を保存
     slot.intervalId = intervalId;
   });
 
-  // 結果表示をリセット
-  resultText.textContent = "スロット回転中...";
-  spinButton.disabled = true; // ボタンを無効化
+  resultText.innerHTML = "スロット回転中..."; // innerHTMLに変更
+  spinButton.disabled = true;
 
   // 2秒後にスピニングを停止
   setTimeout(() => {
-    let finalCustoms = [];
+    let finalCustomNames = [];
     slots.forEach((slot) => {
-      // アニメーションとテキスト更新を停止
       clearInterval(slot.intervalId);
       slot.classList.remove("spinning");
 
-      // 最終的なカスタムを決定
       const randomIndex = Math.floor(Math.random() * customizations.length);
       const finalCustom = customizations[randomIndex];
-      slot.textContent = finalCustom;
-      finalCustoms.push(finalCustom);
+      slot.textContent = finalCustom.name; // .nameプロパティを表示
+      finalCustomNames.push(finalCustom.name);
+    });
+
+    // --- ここから計算ロジック ---
+    // 1. ベースドリンクの情報を取得
+    const selectedDrinkObject = drinks.find(
+      (drink) => drink.name === drinkSelect.value
+    );
+
+    // 2. 選ばれたカスタムの情報を取得
+    const selectedCustomObjects = finalCustomNames.map((name) => {
+      return customizations.find((custom) => custom.name === name);
+    });
+
+    // 3. 合計金額とカロリーを計算
+    let totalPrice = selectedDrinkObject.price;
+    let totalCalories = selectedDrinkObject.calories;
+
+    selectedCustomObjects.forEach((custom) => {
+      totalPrice += custom.price;
+      totalCalories += custom.calories;
     });
 
     // 最終結果を表示
-    const selectedDrink = drinkSelect.value;
-    resultText.textContent = `「${selectedDrink}」に「${finalCustoms.join(
-      "」「"
-    )}」のカスタム！`;
-    spinButton.disabled = false; // ボタンを再度有効化
-  }, 2000); // 2000ミリ秒 = 2秒
+    resultText.innerHTML = `
+      「${selectedDrinkObject.name}」<br>
+      カスタム： 「${finalCustomNames.join("」「")}」<br><br>
+      <strong>合計金額: ¥${totalPrice}</strong><br>
+      <strong>合計カロリー: 約${totalCalories}kcal</strong>
+    `;
+    spinButton.disabled = false;
+  }, 2000);
 });
