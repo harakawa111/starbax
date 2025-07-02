@@ -1,95 +1,116 @@
-// --- データの準備（オブジェクトの配列にアップグレード） ---
-const drinks = [
-  { name: "ドリップ コーヒー (Hot)", price: 380, calories: 10 },
-  { name: "スターバックス ラテ (Hot)", price: 445, calories: 193 },
-  { name: "キャラメル マキアート", price: 500, calories: 245 },
-  { name: "抹茶 ティー ラテ", price: 495, calories: 226 },
-];
-
-const customizations = [
-  { name: "無脂肪乳に変更", price: 0, calories: -80 },
-  { name: "低脂肪タイプに変更", price: 0, calories: -40 },
-  { name: "豆乳に変更", price: 55, calories: -15 },
-  { name: "アーモンドミルクに変更", price: 55, calories: -20 },
-  { name: "オーツミルクに変更", price: 55, calories: -5 },
-  { name: "ホイップ追加", price: 55, calories: 83 },
-  { name: "チョコチップ追加", price: 55, calories: 27 },
-  { name: "キャラメルソース追加", price: 0, calories: 17 },
-  { name: "チョコレートソース追加", price: 0, calories: 16 },
-  { name: "はちみつ追加", price: 0, calories: 21 },
-  { name: "エスプレッソショット追加", price: 55, calories: 5 },
-];
-
 // --- HTML要素の取得 ---
 const drinkSelect = document.getElementById("base-drink");
 const slots = document.querySelectorAll(".slot");
 const spinButton = document.getElementById("spin-button");
 const resultText = document.getElementById("result-text");
 
+// --- グローバル変数 ---
+let drinksData = [];
+let customizationsData = [];
+
 // --- 初期化処理 ---
-// ドリンク選択のプルダウンに選択肢を追加する
-drinks.forEach((drink) => {
-  const option = document.createElement("option");
-  option.value = drink.name; // valueもnameに設定
-  option.textContent = `${drink.name} (¥${drink.price})`; // 値段も表示
-  drinkSelect.appendChild(option);
+document.addEventListener("DOMContentLoaded", async () => {
+  // データが読み込まれるまでボタンを無効化
+  spinButton.disabled = true;
+  resultText.textContent = "データを読み込み中...";
+
+  try {
+    // サーバーのAPIからデータを並行して取得
+    const [drinksRes, customsRes] = await Promise.all([
+      fetch("/api/drinks"),
+      fetch("/api/customizations"),
+    ]);
+
+    // サーバーの応答が正常かチェック
+    if (!drinksRes.ok || !customsRes.ok) {
+      throw new Error(
+        `サーバーエラー: ${drinksRes.status}, ${customsRes.status}`
+      );
+    }
+
+    drinksData = await drinksRes.json();
+    customizationsData = await customsRes.json();
+
+    // ドリンクデータがあればUIを構築
+    if (drinksData.length > 0) {
+      drinksData.forEach((drink) => {
+        const option = document.createElement("option");
+        option.value = drink.name;
+        option.textContent = `${drink.name} (¥${drink.price})`;
+        drinkSelect.appendChild(option);
+      });
+      resultText.textContent = "準備完了！スロットを開始してください。";
+      spinButton.disabled = false; // データ読み込み後にボタンを有効化
+    } else {
+      resultText.textContent = "エラー: ドリンクデータが空です。";
+    }
+  } catch (error) {
+    console.error("データの取得に失敗しました:", error);
+    resultText.textContent =
+      "エラー: データの取得に失敗しました。サーバーが起動しているか確認してください。";
+  }
 });
 
 // --- イベントリスナーの設定 ---
 spinButton.addEventListener("click", () => {
+  // カスタムデータがない場合は処理を中断
+  if (customizationsData.length === 0) {
+    resultText.textContent =
+      "カスタムデータがありません。ページを再読み込みしてください。";
+    return;
+  }
+
   // スピニング開始
   slots.forEach((slot) => {
     slot.classList.add("spinning");
     const intervalId = setInterval(() => {
-      const randomIndex = Math.floor(Math.random() * customizations.length);
-      slot.textContent = customizations[randomIndex].name; // .nameプロパティを表示
+      const randomIndex = Math.floor(Math.random() * customizationsData.length);
+      slot.textContent = customizationsData[randomIndex].name;
     }, 100);
     slot.intervalId = intervalId;
   });
 
-  resultText.innerHTML = "スロット回転中..."; // innerHTMLに変更
+  resultText.innerHTML = "スロット回転中...";
   spinButton.disabled = true;
 
   // 2秒後にスピニングを停止
   setTimeout(() => {
-    let finalCustomNames = [];
+    const finalCustomNames = [];
     slots.forEach((slot) => {
       clearInterval(slot.intervalId);
       slot.classList.remove("spinning");
-
-      const randomIndex = Math.floor(Math.random() * customizations.length);
-      const finalCustom = customizations[randomIndex];
-      slot.textContent = finalCustom.name; // .nameプロパティを表示
+      const randomIndex = Math.floor(Math.random() * customizationsData.length);
+      const finalCustom = customizationsData[randomIndex];
+      slot.textContent = finalCustom.name;
       finalCustomNames.push(finalCustom.name);
     });
 
-    // --- ここから計算ロジック ---
-    // 1. ベースドリンクの情報を取得
-    const selectedDrinkObject = drinks.find(
-      (drink) => drink.name === drinkSelect.value
-    );
+    const selectedDrinkName = drinkSelect.value;
 
-    // 2. 選ばれたカスタムの情報を取得
-    const selectedCustomObjects = finalCustomNames.map((name) => {
-      return customizations.find((custom) => custom.name === name);
-    });
+    // サーバーに計算を依頼
+    fetch("/api/calculate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        drinkName: selectedDrinkName,
+        customNames: finalCustomNames,
+      }),
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        if (data.error) throw new Error(data.error);
+        resultText.innerHTML = `
+        「${selectedDrinkName}」<br>
+        カスタム： 「${finalCustomNames.join("」「")}」<br><br>
+        <strong>合計金額: ¥${data.totalPrice}</strong><br>
+        <strong>合計カロリー: 約${data.totalCalories}kcal</strong>
+      `;
+      })
+      .catch((error) => {
+        console.error("計算エラー:", error);
+        resultText.textContent = "エラー: 計算に失敗しました。";
+      });
 
-    // 3. 合計金額とカロリーを計算
-    let totalPrice = selectedDrinkObject.price;
-    let totalCalories = selectedDrinkObject.calories;
-
-    selectedCustomObjects.forEach((custom) => {
-      totalPrice += custom.price;
-      totalCalories += custom.calories;
-    });
-
-    // 最終結果を表示
-    resultText.innerHTML = `
-      「${selectedDrinkObject.name}」<br>
-      カスタム： 「${finalCustomNames.join("」「")}」<br><br>
-      <strong>合計金額: ¥${totalPrice}</strong><br>
-      <strong>合計カロリー: 約${totalCalories}kcal</strong>
-    `;
     spinButton.disabled = false;
   }, 2000);
 });
