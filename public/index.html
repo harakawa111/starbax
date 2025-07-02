@@ -7,7 +7,28 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
-    <h1>こんにちは！</h1>
-    <p>スタバ呪文提案アプリの第一歩です。</p>
+    <div class="container">
+      <h1>スタバ呪文提案アプリ</h1>
+
+      <div class="controls">
+        <label for="base-drink">ベースのドリンク:</label>
+        <select id="base-drink"></select>
+      </div>
+
+      <div id="slots-container">
+        <div class="slot">カスタム1</div>
+        <div class="slot">カスタム2</div>
+        <div class="slot">カスタム3</div>
+      </div>
+
+      <button id="spin-button">スロット開始</button>
+
+      <div id="result-area">
+        <h2>あなたの呪文</h2>
+        <p id="result-text">ここに結果が表示されます</p>
+      </div>
+    </div>
+
+    <script src="script.js"></script>
   </body>
 </html>
