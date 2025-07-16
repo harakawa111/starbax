@@ -1,6 +1,7 @@
 // --- HTML要素の取得 ---
 const drinkSelect = document.getElementById("base-drink");
-const slots = document.querySelectorAll(".slot");
+const sizeSelect = document.createElement("select"); // サイズ選択は動的に作成
+const slotsContainer = document.getElementById("slots-container");
 const spinButton = document.getElementById("spin-button");
 const resultText = document.getElementById("result-text");
 
@@ -8,64 +9,104 @@ const resultText = document.getElementById("result-text");
 let drinksData = [];
 let customizationsData = [];
 
+// --- 関数 ---
+function updateSizeOptions() {
+  const selectedDrinkId = parseInt(drinkSelect.value);
+  const selectedDrink = drinksData.find((d) => d.id === selectedDrinkId);
+
+  sizeSelect.innerHTML = ""; // 前の選択肢をクリア
+
+  if (selectedDrink && selectedDrink.variants) {
+    selectedDrink.variants.forEach((variant) => {
+      const option = document.createElement("option");
+      option.value = variant.size.id;
+      option.textContent = `${variant.size.name} (${variant.size.volume}ml)`;
+      sizeSelect.appendChild(option);
+    });
+  }
+}
+
 // --- 初期化処理 ---
 document.addEventListener("DOMContentLoaded", async () => {
-  // データが読み込まれるまでボタンを無効化
   spinButton.disabled = true;
   resultText.textContent = "データを読み込み中...";
 
+  const controlsDiv = document.querySelector(".controls");
+  const sizeLabel = document.createElement("label");
+  sizeLabel.textContent = "サイズ:";
+  sizeLabel.htmlFor = "size-select";
+  sizeSelect.id = "size-select";
+  controlsDiv.appendChild(document.createElement("br"));
+  controlsDiv.appendChild(sizeLabel);
+  controlsDiv.appendChild(sizeSelect);
+
   try {
-    // サーバーのAPIからデータを並行して取得
     const [drinksRes, customsRes] = await Promise.all([
       fetch("/api/drinks"),
       fetch("/api/customizations"),
     ]);
 
-    // サーバーの応答が正常かチェック
-    if (!drinksRes.ok || !customsRes.ok) {
-      throw new Error(
-        `サーバーエラー: ${drinksRes.status}, ${customsRes.status}`
-      );
-    }
+    if (!drinksRes.ok || !customsRes.ok)
+      throw new Error("サーバーの応答がありません");
 
     drinksData = await drinksRes.json();
     customizationsData = await customsRes.json();
 
-    // ドリンクデータがあればUIを構築
     if (drinksData.length > 0) {
       drinksData.forEach((drink) => {
         const option = document.createElement("option");
-        option.value = drink.name;
-        option.textContent = `${drink.name} (¥${drink.price})`;
+        option.value = drink.id;
+        option.textContent = drink.name;
         drinkSelect.appendChild(option);
       });
+      updateSizeOptions();
       resultText.textContent = "準備完了！スロットを開始してください。";
-      spinButton.disabled = false; // データ読み込み後にボタンを有効化
+      spinButton.disabled = false;
     } else {
-      resultText.textContent = "エラー: ドリンクデータが空です。";
+      resultText.textContent = "エラー: ドリンクデータがありません。";
     }
   } catch (error) {
-    console.error("データの取得に失敗しました:", error);
-    resultText.textContent =
-      "エラー: データの取得に失敗しました。サーバーが起動しているか確認してください。";
+    console.error("データの取得に失敗:", error);
+    resultText.textContent = "エラー: データの取得に失敗しました。";
   }
 });
 
-// --- イベントリスナーの設定 ---
-spinButton.addEventListener("click", () => {
-  // カスタムデータがない場合は処理を中断
-  if (customizationsData.length === 0) {
-    resultText.textContent =
-      "カスタムデータがありません。ページを再読み込みしてください。";
-    return;
+// --- イベントリスナー ---
+drinkSelect.addEventListener("change", updateSizeOptions);
+
+spinButton.addEventListener("click", async () => {
+  const selectedDrink = drinksData.find(
+    (d) => d.id === parseInt(drinkSelect.value)
+  );
+  if (!selectedDrink || customizationsData.length === 0) return;
+
+  // 【修正点1】利用可能なカスタムを先に絞り込む
+  const availableCustoms = customizationsData.filter(
+    (c) =>
+      c.availableFor.includes("all") ||
+      c.availableFor.includes(selectedDrink.drinkType)
+  );
+
+  // 【修正点2】スロット数を、ランダム(1-3)かつ利用可能なカスタム数を超えないように決定
+  const maxSlots = Math.min(3, availableCustoms.length);
+  const slotCount = Math.floor(Math.random() * maxSlots) + 1;
+
+  slotsContainer.innerHTML = "";
+  for (let i = 0; i < slotCount; i++) {
+    const slot = document.createElement("div");
+    slot.className = "slot";
+    slot.textContent = `カスタム${i + 1}`;
+    slotsContainer.appendChild(slot);
   }
+  const slots = document.querySelectorAll(".slot");
 
   // スピニング開始
   slots.forEach((slot) => {
     slot.classList.add("spinning");
     const intervalId = setInterval(() => {
-      const randomIndex = Math.floor(Math.random() * customizationsData.length);
-      slot.textContent = customizationsData[randomIndex].name;
+      const randomCustom =
+        availableCustoms[Math.floor(Math.random() * availableCustoms.length)];
+      slot.textContent = randomCustom.name;
     }, 100);
     slot.intervalId = intervalId;
   });
@@ -73,37 +114,41 @@ spinButton.addEventListener("click", () => {
   resultText.innerHTML = "スロット回転中...";
   spinButton.disabled = true;
 
-  // 2秒後にスピニングを停止
+  // スピニング停止
   setTimeout(() => {
-    const finalCustomNames = [];
-    slots.forEach((slot) => {
+    // 【修正点3】利用可能なカスタムをシャッフルし、スロット数だけ取り出すことで重複を防ぐ
+    const shuffledCustoms = availableCustoms.sort(() => 0.5 - Math.random());
+    const finalCustoms = shuffledCustoms.slice(0, slotCount);
+    const finalCustomIdArray = finalCustoms.map((c) => c.id);
+
+    slots.forEach((slot, index) => {
       clearInterval(slot.intervalId);
       slot.classList.remove("spinning");
-      const randomIndex = Math.floor(Math.random() * customizationsData.length);
-      const finalCustom = customizationsData[randomIndex];
-      slot.textContent = finalCustom.name;
-      finalCustomNames.push(finalCustom.name);
+      // finalCustomsから直接名前を取得
+      slot.textContent = finalCustoms[index].name;
     });
 
-    const selectedDrinkName = drinkSelect.value;
+    const selectedDrinkId = parseInt(drinkSelect.value);
+    const selectedSizeId = parseInt(sizeSelect.value);
 
-    // サーバーに計算を依頼
+    // IDをサーバーに送信
     fetch("/api/calculate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        drinkName: selectedDrinkName,
-        customNames: finalCustomNames,
+        drinkId: selectedDrinkId,
+        sizeId: selectedSizeId,
+        customIds: finalCustomIdArray,
       }),
     })
       .then((response) => response.json())
       .then((data) => {
         if (data.error) throw new Error(data.error);
         resultText.innerHTML = `
-        「${selectedDrinkName}」<br>
-        カスタム： 「${finalCustomNames.join("」「")}」<br><br>
+        ${data.spell} (全${data.spellLength}文字)<br><br>
         <strong>合計金額: ¥${data.totalPrice}</strong><br>
-        <strong>合計カロリー: 約${data.totalCalories}kcal</strong>
+        <strong>合計カロリー: 約${data.totalCalories}kcal</strong><br>
+        <small>アレルゲン: ${data.allergens.join(", ") || "なし"}</small>
       `;
       })
       .catch((error) => {

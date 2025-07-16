@@ -1,73 +1,95 @@
 // --- セットアップ ---
 const express = require("express");
 const path = require("path");
+const { PrismaClient } = require("@prisma/client");
 const app = express();
+const prisma = new PrismaClient();
 const PORT = process.env.PORT || 3000;
 
 // --- ミドルウェア ---
-// 'public'ディレクトリの静的ファイル（HTML, CSS, JS）を配信する設定
 app.use(express.static(path.join(__dirname, "public")));
-// POSTリクエストで送られてくるJSONデータを解析するための設定
 app.use(express.json());
 
-// --- サーバー側のモックデータ ---
-const drinks = [
-  { name: "ドリップ コーヒー (Hot)", price: 380, calories: 10 },
-  { name: "スターバックス ラテ (Hot)", price: 445, calories: 193 },
-  { name: "キャラメル マキアート", price: 500, calories: 245 },
-  { name: "抹茶 ティー ラテ", price: 495, calories: 226 },
-];
+// --- APIエンドポイント (データベースと連携) ---
 
-const customizations = [
-  { name: "無脂肪乳に変更", price: 0, calories: -80 },
-  { name: "低脂肪タイプに変更", price: 0, calories: -40 },
-  { name: "豆乳に変更", price: 55, calories: -15 },
-  { name: "アーモンドミルクに変更", price: 55, calories: -20 },
-  { name: "オーツミルクに変更", price: 55, calories: -5 },
-  { name: "ホイップ追加", price: 55, calories: 83 },
-  { name: "チョコチップ追加", price: 55, calories: 27 },
-  { name: "キャラメルソース追加", price: 0, calories: 17 },
-  { name: "チョコレートソース追加", price: 0, calories: 16 },
-  { name: "はちみつ追加", price: 0, calories: 21 },
-  { name: "エスプレッソショット追加", price: 55, calories: 5 },
-];
-
-// --- APIエンドポイント（APIの窓口） ---
-
-// ドリンクのリストを提供するAPI
-app.get("/api/drinks", (req, res) => {
-  res.json(drinks);
+// ドリンクとそのバリエーション情報を全て取得するAPI
+app.get("/api/drinks", async (req, res) => {
+  try {
+    const drinksWithVariants = await prisma.drink.findMany({
+      include: {
+        variants: {
+          include: {
+            size: true, // 各バリアントにサイズの詳細情報(name, volume)を含める
+          },
+        },
+      },
+    });
+    res.json(drinksWithVariants);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "データベースからドリンクを取得できませんでした。" });
+  }
 });
 
 // カスタムのリストを提供するAPI
-app.get("/api/customizations", (req, res) => {
-  res.json(customizations);
+app.get("/api/customizations", async (req, res) => {
+  try {
+    const customizations = await prisma.customization.findMany();
+    res.json(customizations);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ error: "データベースからカスタムを取得できませんでした。" });
+  }
 });
 
 // 合計金額とカロリーを計算するAPI
-app.post("/api/calculate", (req, res) => {
-  const { drinkName, customNames } = req.body;
+app.post("/api/calculate", async (req, res) => {
+  try {
+    const { drinkId, sizeId, customIds } = req.body;
 
-  const selectedDrinkObject = drinks.find((d) => d.name === drinkName);
-  const selectedCustomObjects = customNames.map((name) =>
-    customizations.find((c) => c.name === name)
-  );
+    // データベースから情報を取得
+    const variant = await prisma.drinkVariant.findUnique({
+      where: { drinkId_sizeId: { drinkId, sizeId } },
+      include: { drink: true, size: true },
+    });
 
-  if (!selectedDrinkObject || selectedCustomObjects.includes(undefined)) {
-    return res.status(400).json({ error: "無効な選択です。" });
+    const customizations = await prisma.customization.findMany({
+      where: { id: { in: customIds } },
+    });
+
+    if (!variant || customizations.length !== customIds.length) {
+      return res.status(400).json({ error: "無効な選択です。" });
+    }
+
+    // 合計を計算
+    let totalPrice = variant.price;
+    let totalCalories = variant.calories;
+    let allAllergens = new Set(variant.allergens); // Setを使って重複をなくす
+    let spell = [variant.size.name, variant.drink.name]; // 呪文の組み立て開始
+
+    customizations.forEach((custom) => {
+      totalPrice += custom.price;
+      totalCalories += custom.calories;
+      custom.allergens.forEach((allergen) => allAllergens.add(allergen));
+      spell.push(custom.name);
+    });
+
+    const finalSpell = spell.join("・");
+
+    // 結果を返す
+    res.json({
+      spell: finalSpell,
+      spellLength: finalSpell.length,
+      totalPrice,
+      totalCalories,
+      allergens: Array.from(allAllergens).filter((a) => a !== "-"), // "-"を除外
+    });
+  } catch (error) {
+    console.error(error); // サーバー側でエラー内容を確認できるようにログを出力
+    res.status(500).json({ error: "計算中にエラーが発生しました。" });
   }
-
-  let totalPrice = selectedDrinkObject.price;
-  let totalCalories = selectedDrinkObject.calories;
-  selectedCustomObjects.forEach((custom) => {
-    totalPrice += custom.price;
-    totalCalories += custom.calories;
-  });
-
-  res.json({
-    totalPrice: totalPrice,
-    totalCalories: totalCalories,
-  });
 });
 
 // --- サーバーを起動 ---

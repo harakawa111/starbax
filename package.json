@@ -1,7 +1,7 @@
 {
   "name": "stabaapp",
   "version": "1.0.0",
-  "description": "スタバ呪文提案アプリ",
+  "description": "スタバ呪文提案",
   "main": "app.js",
   "scripts": {
     "start": "node app.js"
@@ -9,7 +9,14 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
+  "prisma": {
+    "seed": "node prisma/seed.js"
+  },
   "dependencies": {
+    "@prisma/client": "^5.16.2",
     "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "prisma": "^5.16.2"
   }
 }
