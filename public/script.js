@@ -88,7 +88,7 @@ spinButton.addEventListener("click", async () => {
   );
 
   // 【修正点2】スロット数を、ランダム(1-3)かつ利用可能なカスタム数を超えないように決定
-  const maxSlots = Math.min(3, availableCustoms.length);
+  const maxSlots = Math.min(7, availableCustoms.length);
   const slotCount = Math.floor(Math.random() * maxSlots) + 1;
 
   slotsContainer.innerHTML = "";
